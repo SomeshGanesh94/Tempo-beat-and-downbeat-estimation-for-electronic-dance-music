@@ -5,98 +5,163 @@ clc;
 clear all;
 close all;
 
-[stereo_audio,fs] = audioread('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Downbeat Detection/120_jd_drums_1.wav');
+
+bp_filt = designfilt('bandpassfir', 'StopbandFrequency1', 1,...
+    'PassbandFrequency1', 50, 'PassbandFrequency2', 400,...
+    'StopbandFrequency2', 450, 'StopbandAttenuation1', 60,...
+    'PassbandRipple', 3, 'StopbandAttenuation2', 60, 'SampleRate', 44100);
+
+
+%%
+
+files = dir('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Gaint Steps/giantsteps-tempo-dataset-master/audio');
+
+for song_counter = 76 : 110
+    song_counter
+    
+    [stereo_audio,fs] = audioread(strcat(files(song_counter).folder,'/',files(song_counter).name));
+    
+    [path,name,ext] = fileparts(strcat(files(song_counter).folder,'/',files(song_counter).name));
+    
+    bpmfile = fopen(strcat('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Gaint Steps/giantsteps-tempo-dataset-master/annotations/tempo/',name,'.bpm'));
+    true_bpm(song_counter) = fscanf(bpmfile,'%f'); 
+
+
+% [stereo_audio,fs] = audioread('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Downbeat Detection/127_breso_drums.wav');
 mono_audio = stereo_audio(:,1);
 audio = normalizeIntensityLevel(mono_audio,fs);
 t = 0:1/fs:(length(audio)-1)/fs;
 f = 1:fs/2048:fs;
 
-figure;
-plot(t,audio); axis tight;
-title('Time domain representation of audio input');
-figure;
-spectrogram(audio,hamming(1024),512,1024,fs,'yaxis'); 
-ax = caxis;
-title('Spectrogram of original audio (1 channel)');
+% figure;
+% plot(t,audio); axis tight;
+% title('Time domain representation of audio input');
+% figure;
+% spectrogram(audio,hamming(1024),512,1024,fs,'yaxis'); 
+% ax = caxis;
+% title('Spectrogram of original audio (1 channel)');
 %%
 %Bandpass filtering input signal
 
-bp_filtered_signal = bpass(audio,fs,ax);
+bp_filtered_signal = bpass(bp_filt,audio,fs);
 %%
 %Dividing the file into blocks
 
 %Function arguments for reference
 %function [t,X] = generateBlocks(x, sample_rate_Hz, block_size, hop_size)
-[time_stamps,audio_blocks] = generateBlocks(bp_filtered_signal, fs, 1024, 256);
-%%
-%Difference function on audio file
+block_size = 1024;
+hop_size = 256;
 
-% diff_aud = [0;diff(bp_filtered_signal)];
-% diff_aud = normalizeIntensityLevel(diff_aud,fs);
-% 
-% figure;
-% subplot(2,1,1);
-% plot(t,bp_filtered_signal); axis tight;
-% title('Difference of filtered audio file');
-% subplot(2,1,2);
-% plot(t,diff_aud); axis tight;
+[time_stamps,audio_blocks] = generateBlocks(bp_filtered_signal, fs, block_size, hop_size);
 %%
 %Calculating RMS for each block
 
 rms_audio_blocks = rmsCal(audio_blocks,fs);
+
+% sflux_audio_blocks = sflux(audio_blocks,block_size,fs);
 %%
 %Calculating first derivative of RMS
 
 diff_rms = diff([0 rms_audio_blocks]);
 diff_rms = normalizeIntensityLevel(diff_rms,fs);
 
-figure;
-subplot(3,1,1);
-plot(t,bp_filtered_signal); axis tight;
-title('RMS & diff(RMS)');
-subplot(3,1,2);
-plot(time_stamps(1:end),rms_audio_blocks); axis tight;
-subplot(3,1,3);
-plot(time_stamps(1:end),diff_rms); axis tight;
-%%
-%Finding peaks
+% diff_rms = medfilt1(diff_rms1,10);
 
-% [peaks1,locations1] = findpeaks(rms_audio_blocks,fs);
-% [peaks2,locations2] = findpeaks(diff_rms,fs);
-% 
 % figure;
 % subplot(3,1,1);
 % plot(t,bp_filtered_signal); axis tight;
+% title('RMS & diff(RMS)');
 % subplot(3,1,2);
-% plot(locations1,peaks1); axis tight;
+% plot(time_stamps(1:end),rms_audio_blocks); axis tight;
 % subplot(3,1,3);
-% plot(locations2,peaks2); axis tight;
+% plot(time_stamps(1:end),diff_rms); axis tight;
 %%
-%Combining features
+%New beat detection section
 
-% peak_sig1 = rms_audio_blocks + [0 diff_rms];
-% peak_sig2 = rms_audio_blocks .* [0 diff_rms];
-% 
-% figure;
-% subplot(3,1,1);
-% plot(t,bp_filtered_signal); axis tight;
-% subplot(3,1,2);
-% plot(time_stamps(1:end),peak_sig1); axis tight;
-% subplot(3,1,3);
-% plot(time_stamps(1:end),peak_sig2); axis tight;
+
+% update beat detection algorithm
+% 	choose highest diff rms
+[max_drms, loc] = max(diff_rms(2:end));
+
+% 	xcorr and find period
+period = periodAcorr(diff_rms(2:end),time_stamps);
+
+% 	up and down to find max diff rms in a tolerance range
+[beats, computed_period] = beatDetect(diff_rms,bp_filtered_signal,period,loc,t,time_stamps);
+
+computed_bpm(song_counter) = 60 / time_stamps(computed_period);
+
+% 	xcorr and find period again
+% 	go in the same direction till end on both sides
+% 	avg period?
+% 	mark beats for this avg period
+%%
+%Moving average filtering
+
+% mov_avg_filt_sig = movAvg(diff_rms,5);
 %%
 %Thresholding
 
-% max_daud = max(diff_aud(2:end));
-% for i=1:length(diff_aud)
-%     if diff_aud(i)<=(0.5*max_daud)
-%         diff_aud(i) = 0;
-%     end
-% end
+% [max_drms, thresh_diff_rms] = thresh(bp_filtered_signal,diff_rms,time_stamps,t);
+% %%
+% %Finding period of audio using autocorrelation
+% 
+% period = periodAcorr(thresh_diff_rms);
+% 
+% 
+% 
+% % period = periodAcorr(bp_filtered_signal);
+% 
+% %%
+% %Locating tolerance positions of diff_rms and using BPM to find approximate
+% %distance between downbeats
+% 
+% [max_drms, loc] = max(thresh_diff_rms(2:end));
+% 
+% bpm = 128; %Assuming 4/4
+% 
+% downbeat_dist = bpm / 60;
+% %%
+% %Find Beats using period
+% 
+% beats = beatDetect(rms_audio_blocks,bp_filtered_signal,period,loc,t,time_stamps);
+% 
+% computed_bpm = 60 / time_stamps(period)
+% %%
+% %Extracting downbeats from beats
+% % a = xcorr(thresh_diff_rms);
+% % b = a(1:(length(a)/2)+1);
+% 
+% % downbeats = downbeatDetect(bp_filtered_signal,beats,loc,downbeat_dist,time_stamps,fs,hop_size,t);
+% 
+% %%
+% %Segment using sflux
+% 
+% 
+% 
+% % smooth_sflux = movAvg(sflux_audio_blocks,1);
+% %     
+% % diff_sflux = diff(smooth_sflux);
+% % figure;
+% % subplot(2,1,1);
+% % plot(smooth_sflux); axis tight;
+% % title('Diff input & output');
+% % subplot(2,1,2);
+% % plot(diff_sflux); axis tight;
+% 
+% 
+%    
+%         
 
-[max_drms thresh_diff_rms] = thresh(bp_filtered_signal,diff_rms,time_stamps,t);
 %%
+%Evaluation parameters
+difference_bpm(song_counter - 3) = true_bpm(song_counter) - computed_bpm(song_counter);
 
-   
-        
-        
+difference_bpm(song_counter - 3)
+
+
+end 
+
+mean_difference = mean(difference_bpm);
+
+std_result = std(difference_bpm);

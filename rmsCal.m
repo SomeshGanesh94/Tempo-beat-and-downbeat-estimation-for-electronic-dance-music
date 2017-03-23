@@ -1,4 +1,4 @@
-%RMS calculation for each blocks
+%RMS calculation for each block
 %Somesh Ganesh
 function rms_audio_blocks = rmsCal(audio_blocks,fs)
 
