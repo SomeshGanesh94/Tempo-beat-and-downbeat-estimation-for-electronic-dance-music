@@ -16,7 +16,7 @@ bp_filt = designfilt('bandpassfir', 'StopbandFrequency1', 1,...
 
 files = dir('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Gaint Steps/giantsteps-tempo-dataset-master/audio');
 
-for song_counter = 76 : 110
+for song_counter = 4 : 40
     song_counter
     
     [stereo_audio,fs] = audioread(strcat(files(song_counter).folder,'/',files(song_counter).name));
@@ -26,8 +26,8 @@ for song_counter = 76 : 110
     bpmfile = fopen(strcat('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Gaint Steps/giantsteps-tempo-dataset-master/annotations/tempo/',name,'.bpm'));
     true_bpm(song_counter) = fscanf(bpmfile,'%f'); 
 
-
-% [stereo_audio,fs] = audioread('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Downbeat Detection/127_breso_drums.wav');
+% [stereo_audio,fs] = audioread('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Loop based EM/ISMIR16-EM-Patterns-Audio/dataset/125_acid_drums.wav');
+% [stereo_audio,fs] = audioread('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Downbeat Detection/150_juke_drums.wav');
 mono_audio = stereo_audio(:,1);
 audio = normalizeIntensityLevel(mono_audio,fs);
 t = 0:1/fs:(length(audio)-1)/fs;
@@ -86,10 +86,13 @@ diff_rms = normalizeIntensityLevel(diff_rms,fs);
 % 	xcorr and find period
 period = periodAcorr(diff_rms(2:end),time_stamps);
 
-% 	up and down to find max diff rms in a tolerance range
-[beats, computed_period] = beatDetect(diff_rms,bp_filtered_signal,period,loc,t,time_stamps);
+tempo(song_counter) = crossGrid(diff_rms, period, time_stamps);
 
-computed_bpm(song_counter) = 60 / time_stamps(computed_period);
+% 	up and down to find max diff rms in a tolerance range
+% [beats, computed_period] = beatDetect(diff_rms,bp_filtered_signal,period,loc,t,time_stamps);
+
+% computed_bpm = 60 / time_stamps(computed_period);
+% computed_bpm(song_counter) = 60 / time_stamps(computed_period);
 
 % 	xcorr and find period again
 % 	go in the same direction till end on both sides
@@ -154,10 +157,19 @@ computed_bpm(song_counter) = 60 / time_stamps(computed_period);
 %         
 
 %%
-%Evaluation parameters
-difference_bpm(song_counter - 3) = true_bpm(song_counter) - computed_bpm(song_counter);
+% %Evaluation parameters
+main_tempo_diff = zeros(1, 6);
+main_tempo_diff(1,1) = true_bpm(song_counter) - tempo(song_counter);
+main_tempo_diff(1,2) = true_bpm(song_counter) - 2 * tempo(song_counter);
+main_tempo_diff(1,3) = true_bpm(song_counter) - 4 * tempo(song_counter);
+main_tempo_diff(1,4) = true_bpm(song_counter) - 8 * tempo(song_counter);
+main_tempo_diff(1,5) = true_bpm(song_counter) - 16 * tempo(song_counter);
+main_tempo_diff(1,6) = true_bpm(song_counter) - 32 * tempo(song_counter);
 
-difference_bpm(song_counter - 3)
+difference_bpm(song_counter - 3) = min(abs(main_tempo_diff));
+
+disp(difference_bpm(song_counter - 3));
+disp(true_bpm(song_counter));
 
 
 end 
