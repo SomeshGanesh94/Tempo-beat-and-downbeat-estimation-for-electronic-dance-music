@@ -22,7 +22,7 @@ function varargout = gui_demo(varargin)
 
 % Edit the above text to modify the response to help gui_demo
 
-% Last Modified by GUIDE v2.5 20-Apr-2017 04:02:23
+% Last Modified by GUIDE v2.5 28-Apr-2017 11:44:59
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -54,15 +54,16 @@ function gui_demo_OpeningFcn(hObject, eventdata, handles, varargin)
 
 % Choose default command line output for gui_demo
 handles.output = hObject;
-handles.song_counter = 4;
 handles.bp_filt = designfilt('bandpassfir', 'StopbandFrequency1', 1,...
     'PassbandFrequency1', 50, 'PassbandFrequency2', 400,...
     'StopbandFrequency2', 450, 'StopbandAttenuation1', 60,...
     'PassbandRipple', 3, 'StopbandAttenuation2', 60, 'SampleRate', 44100);
 handles.audio = 0;
 handles.fs = 0;
-handles.ground_truth = 0;
 handles.period = 0;
+handles.fbeat = 0;
+handles.beats = 0;
+handles.ts = 0;
 warning off;
 
 % Update handles structure
@@ -89,73 +90,20 @@ function pushbutton1_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-
-
-files = dir('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Gaint Steps/giantsteps-tempo-dataset-master/audio');
-song_counter = str2num(get(handles.song_number,'String')) + 3;
-[stereo_audio,fs] = audioread(strcat(files(song_counter).folder,'/',files(song_counter).name));
-[path,name,ext] = fileparts(strcat(files(song_counter).folder,'/',files(song_counter).name));
-bpmfile = fopen(strcat('/Users/someshganesh/Documents/GaTech/Spring 2017/MUSI 7100/Datasets/Gaint Steps/giantsteps-tempo-dataset-master/annotations/tempo/',name,'.bpm'));
-true_bpm(song_counter - 3) = fscanf(bpmfile,'%f');
+[filename, pathname] = uigetfile({'*.mp3'},'Select an audio file');
+fullpathname = strcat(pathname,filename);
+[stereo_audio,fs] = audioread(fullpathname);
 mono_audio = (stereo_audio(:,1) + stereo_audio(:,2)) / 2;
 audio = normalizeIntensityLevel(mono_audio,fs);
 t = 0:1/fs:(length(audio)-1)/fs;
 f = 1:fs/2048:fs;
 
-set(handles.text1, 'String', name);
-set(handles.song_number, 'String', num2str(song_counter - 3));
-set(handles.true_bpm, 'String', num2str(true_bpm(song_counter - 3)));
+set(handles.text1, 'String', filename);
 
 axes(handles.axes1);
-plot(t, mono_audio); axis tight;
+plot(t, audio); hold on; axis tight;
 
-handles.song_counter = song_counter;
-handles.audio = audio;
-handles.fs = fs;
-handles.ground_truth = true_bpm(song_counter - 3);
-guidata(hObject, handles);
-
-
-% --- Executes during object creation, after setting all properties.
-function text1_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to text1 (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-
-
-function song_number_Callback(hObject, eventdata, handles)
-% hObject    handle to song_number (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-
-% Hints: get(hObject,'String') returns contents of song_number as text
-%        str2double(get(hObject,'String')) returns contents of song_number as a double
-
-
-% --- Executes during object creation, after setting all properties.
-function song_number_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to song_number (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    empty - handles not created until after all CreateFcns called
-
-% Hint: edit controls usually have a white background on Windows.
-%       See ISPC and COMPUTER.
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
-
-
-% --- Executes on button press in tempo_estimate.
-function tempo_estimate_Callback(hObject, eventdata, handles)
-% hObject    handle to tempo_estimate (see GCBO)
-% eventdata  reserved - to be defined in a future version of MATLAB
-% handles    structure with handles and user data (see GUIDATA)
-audio = handles.audio;
-fs = handles.fs;
 bp_filt = handles.bp_filt;
-
-song_counter = str2num(get(handles.song_number,'String')) + 3;
 
 bp_filtered_signal = bpass(bp_filt,audio,fs);
 %%
@@ -169,7 +117,6 @@ hop_size = 256;
 
 %%
 %Feature Extraction
-
 rms_audio_blocks = rmsCal(audio_blocks,fs);
 diff_rms = diff([0 rms_audio_blocks]);
 
@@ -209,28 +156,65 @@ tempo(count,13) = crossGrid(normalizeIntensityLevel(diff_rms, fs), period(4), ti
 tempo(count,14) = crossGrid(normalizeIntensityLevel(diff_rms2, fs), period(4), time_stamps);
 tempo(count,15) = crossGrid(normalizeIntensityLevel(sflux_audio_blocks, fs), period(4), time_stamps);
 tempo(count,16) = crossGrid(normalizeIntensityLevel(diff_centroid, fs), period(4), time_stamps);
-%%
-%Evaluation
 
-ground_truth(count) = handles.ground_truth;
-
-final_tempo(count) = mode(tempo(count,:))
-
-final_diff(count) = ground_truth(count)' - final_tempo(count)
-
-final_result(count) = abs(final_diff(count))<1
-
-if final_result(count) == 1
-    set(handles.result, 'String', 'Correct Estimation!');
-else
-    set(handles.result, 'String', 'Wrong estimation!');
-end 
+final_tempo(count) = mode(tempo(count,:));
 
 period_time = 60 / final_tempo(count);
+final_period = length(time_stamps(time_stamps < period_time));
 
+[max_drms, loc] = max(diff_rms(2:end));
+
+beats = beatDetect(rms_audio_blocks,bp_filtered_signal,final_period,loc,t,time_stamps);
+
+% axes(handles.axes3);
+plot(time_stamps,beats); axis tight;
+
+for i = 1 : length(beats)
+    if (beats(i) == 1)
+        fbeat = i;
+        break;
+    end
+end
+
+handles.fbeat = fbeat;
+
+handles.beats = beats;
 handles.period = period_time;
+handles.audio = audio;
+handles.fs = fs;
+handles.ts = time_stamps;
 
 guidata(hObject, handles);
+
+
+% --- Executes during object creation, after setting all properties.
+function text1_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to text1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+
+
+function song_number_Callback(hObject, eventdata, handles)
+% hObject    handle to song_number (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of song_number as text
+%        str2double(get(hObject,'String')) returns contents of song_number as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function song_number_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to song_number (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
 
 
 % --- Executes on button press in play_loop.
@@ -241,52 +225,56 @@ function play_loop_Callback(hObject, eventdata, handles)
 audio = handles.audio;
 fs = handles.fs;
 time_period = handles.period;
-ground_truth = handles.ground_truth;
-true_period = 60 / ground_truth;
+fbeat = handles.fbeat;
+beats = handles.beats;
+time_stamps = handles.ts;
+nloop = 0;
 
-offset = str2num(get(handles.offset,'String'));
-i = str2num(get(handles.beats,'String'));
+downbeat = str2num(get(handles.offset,'String'));
+nloopn = str2num(get(handles.edit5,'String'));
+loopl = str2num(get(handles.edit6,'String'));
 
-loop = audio(round(offset * true_period * fs) + 1 : round(offset * true_period * fs) + 1 + round(i * time_period * fs));
+loop = audio(1 : (round(time_stamps(fbeat * downbeat) * fs) +  loopl * round(time_period * fs)));
 
-full_loop = loop;
-for iloop = 1 : 10
-    full_loop = [full_loop;loop];
+for i = 1 : nloopn - 1
+
+    loop = [loop ; audio(round(time_stamps(fbeat * downbeat) * fs) : round(time_stamps(fbeat * downbeat) * fs) + loopl * round(time_period * fs))];
+    
 end
 
-soundsc(full_loop, fs);
+loop = [loop ; audio(round(time_stamps(fbeat * downbeat) * fs) + loopl * round(time_period * fs) : end)];
+
+soundsc(loop, fs);
     
 guidata(hObject, handles);
 
 
-function beats_Callback(hObject, eventdata, handles)
-% hObject    handle to beats (see GCBO)
+function nloop_Callback(hObject, eventdata, handles)
+% hObject    handle to nloop (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
-% Hints: get(hObject,'String') returns contents of beats as text
-%        str2double(get(hObject,'String')) returns contents of beats as a double
+% Hints: get(hObject,'String') returns contents of nloop as text
+%        str2double(get(hObject,'String')) returns contents of nloop as a double
 audio = handles.audio;
 fs = handles.fs;
 time_period = handles.period;
-ground_truth = handles.ground_truth;
-true_period = 60 / ground_truth;
 
-offset = str2num(get(handles.offset,'String'));
-i = str2num(get(handles.beats,'String'));
+% offset = str2num(get(handles.offset,'String'));
+% i = str2num(get(handles.nloop,'String'));
 
-plot_audio = audio(round(offset * true_period * fs) + 1 : round(offset * true_period * fs) + 1 + round(i * time_period * fs));
-t = 0:1/fs:(length(plot_audio)-1)/fs;
+% plot_audio = audio(round(offset * true_period * fs) + 1 : round(offset * true_period * fs) + 1 + round(i * time_period * fs));
+% t = 0:1/fs:(length(plot_audio)-1)/fs;
 
-axes(handles.axes1);
-plot(t, plot_audio); axis tight;
+% axes(handles.axes1);
+% plot(t, plot_audio); axis tight;
 
 guidata(hObject, handles);
 
 
 % --- Executes during object creation, after setting all properties.
-function beats_CreateFcn(hObject, eventdata, handles)
-% hObject    handle to beats (see GCBO)
+function nloop_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to nloop (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
@@ -311,20 +299,18 @@ function offset_Callback(hObject, eventdata, handles)
 
 % Hints: get(hObject,'String') returns contents of offset as text
 %        str2double(get(hObject,'String')) returns contents of offset as a double
-audio = handles.audio;
-fs = handles.fs;
-time_period = handles.period;
-ground_truth = handles.ground_truth;
-true_period = 60 / ground_truth;
-
-offset = str2num(get(handles.offset,'String'));
-i = str2num(get(handles.beats,'String'));
-
-plot_audio = audio(round(offset * true_period * fs) + 1 : round(offset * true_period * fs) + 1 + round(i * time_period * fs));
-t = 0:1/fs:(length(plot_audio)-1)/fs;
-
-axes(handles.axes1);
-plot(t, plot_audio); axis tight;
+% audio = handles.audio;
+% fs = handles.fs;
+% time_period = handles.period;
+% 
+% offset = str2num(get(handles.offset,'String'));
+% i = str2num(get(handles.nloop,'String'));
+% 
+% plot_audio = audio(round(offset * true_period * fs) + 1 : round(offset * true_period * fs) + 1 + round(i * time_period * fs));
+% t = 0:1/fs:(length(plot_audio)-1)/fs;
+% 
+% axes(handles.axes1);
+% plot(t, plot_audio); axis tight;
 
 guidata(hObject, handles);
 
@@ -332,6 +318,52 @@ guidata(hObject, handles);
 % --- Executes during object creation, after setting all properties.
 function offset_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to offset (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function edit5_Callback(hObject, eventdata, handles)
+% hObject    handle to edit5 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of edit5 as text
+%        str2double(get(hObject,'String')) returns contents of edit5 as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function edit5_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edit5 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+
+function edit6_Callback(hObject, eventdata, handles)
+% hObject    handle to edit6 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of edit6 as text
+%        str2double(get(hObject,'String')) returns contents of edit6 as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function edit6_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edit6 (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
 
