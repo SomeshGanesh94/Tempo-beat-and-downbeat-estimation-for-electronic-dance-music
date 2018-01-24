@@ -1,4 +1,4 @@
-%Downbeat Detection
+%Tempo, beat and downbeat estimation
 %Somesh Ganesh
 
 clc;
